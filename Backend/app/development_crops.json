@@ -1,0 +1,12 @@
+{
+  "Ragi": {"active": true, "varieties": ["Local variety", "Other variety", "Not sure"], "grades": ["Ungraded / not sure", "A", "B", "C"]},
+  "Paddy": {"active": true, "varieties": ["Local variety", "Other variety", "Not sure"], "grades": ["Ungraded / not sure", "A", "B", "C"]},
+  "Maize": {"active": true, "varieties": ["Local variety", "Other variety", "Not sure"], "grades": ["Ungraded / not sure", "A", "B", "C"]},
+  "Jowar": {"active": true, "varieties": ["Local variety", "Other variety", "Not sure"], "grades": ["Ungraded / not sure", "A", "B", "C"]},
+  "Bajra": {"active": true, "varieties": ["Local variety", "Other variety", "Not sure"], "grades": ["Ungraded / not sure", "A", "B", "C"]},
+  "Groundnut": {"active": true, "varieties": ["Local variety", "Other variety", "Not sure"], "grades": ["Ungraded / not sure", "A", "B", "C"]},
+  "Red gram": {"active": true, "varieties": ["Local variety", "Other variety", "Not sure"], "grades": ["Ungraded / not sure", "A", "B", "C"]},
+  "Green gram": {"active": true, "varieties": ["Local variety", "Other variety", "Not sure"], "grades": ["Ungraded / not sure", "A", "B", "C"]},
+  "Sunflower": {"active": true, "varieties": ["Local variety", "Other variety", "Not sure"], "grades": ["Ungraded / not sure", "A", "B", "C"]},
+  "Sugarcane": {"active": true, "varieties": ["Local variety", "Other variety", "Not sure"], "grades": ["Ungraded / not sure", "A", "B", "C"]}
+}

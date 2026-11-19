@@ -3,7 +3,7 @@ type Tokens = { access_token: string; refresh_token: string; expires_in: number 
 export type Profile = { id: number; name: string | null; language: Language; role: string; status: string };
 export type Farm = { id: number; district: string; village: string; area_acres: string };
 export type Harvest = { id: number; farm_id: number; crop: string; variety: string; grade: string; quantity_qtl: string; harvest_date: string; latest_sale_date: string; warnings: string[] };
-export type ReferenceData = { pilot_districts: string[]; crops: Record<string, { varieties: string[]; grades: string[]; bag_weight_kg: number | null }>; max_storage_months: number; max_farm_acres: number };
+export type ReferenceData = { pilot_districts: string[]; allow_manual_district?: boolean; crops: Record<string, { varieties: string[]; grades: string[]; bag_weight_kg: number | null }>; max_storage_months: number; max_farm_acres: number; date_limits?: { harvest_min: string; harvest_max: string; sale_min: string; sale_max: string } };
 
 const storageKey = 'agrivalue.session';
 const phoneKey = 'agrivalue.remembered-phone';
@@ -144,7 +144,9 @@ export const api = {
   updateProfile: (name: string, preferred: Language) => request<Profile>('/me', 'PUT', { name: name.trim() || null, language: preferred }),
   farms: () => request<Farm[]>('/farms'),
   harvests: () => request<Harvest[]>('/harvests'),
+  deleteHarvest: (id: number) => request<void>(`/harvests/${id}`, 'DELETE'),
   referenceData: () => request<ReferenceData>('/reference-data'),
   createFarm: (body: unknown) => request<Farm>('/farms', 'POST', body),
   createHarvest: (body: unknown) => request<Harvest>('/harvests', 'POST', body),
+  saveHarvestRecord: (body: unknown) => request<{ farm: Farm; harvest: Harvest }>('/harvest-records', 'POST', body),
 };

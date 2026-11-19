@@ -19,6 +19,31 @@ def harvest_body(farm_id):
             'latest_sale_date': str(date.today() + timedelta(days=20))}
 
 
+def test_development_crop_options_can_be_saved(api, monkeypatch):
+    from app.config import Settings, settings
+    from app import records
+
+    values = settings().model_dump()
+    monkeypatch.setenv('CROPS', '{}')
+    development = Settings(**(values | {'environment': 'development', 'crops': {}}))
+    assert 'Ragi' in development.crops and 'Paddy' in development.crops
+    assert Settings(**(values | {'environment': 'test', 'crops': {}})).crops == {}
+    assert Settings(**(values | {'environment': 'development'})).crops == values['crops']
+    monkeypatch.setattr(records, 'settings', lambda: development)
+    client, _ = api
+    headers, _ = login(client)
+    options = client.get('/api/v1/reference-data', headers=headers).json()['crops']
+    farm = client.post('/api/v1/farms', headers=headers, json=farm_body()).json()
+    for crop, choices in options.items():
+        response = client.post('/api/v1/harvests', headers=headers,
+                               json=harvest_body(farm['id']) | {
+                                   'crop': crop, 'variety': choices['varieties'][0],
+                                   'grade': 'Ungraded / not sure'})
+        assert response.status_code == 201, response.text
+        assert response.json()['crop'] == crop
+        assert choices['bag_weight_kg'] is None
+
+
 def test_frontend_reference_data_requires_login_and_exposes_only_public_options(api):
     client, _ = api
     assert client.get('/api/v1/reference-data').status_code == 401
@@ -29,7 +54,64 @@ def test_frontend_reference_data_requires_login_and_exposes_only_public_options(
     assert data['pilot_districts'] == ['Test district']
     assert data['crops']['test-crop'] == {
         'varieties': ['test-variety'], 'grades': ['test-grade'], 'bag_weight_kg': 50}
-    assert set(data) == {'pilot_districts', 'crops', 'max_storage_months', 'max_farm_acres'}
+    assert data['allow_manual_district'] is False
+    assert set(data) == {'pilot_districts', 'allow_manual_district', 'crops', 'max_storage_months', 'max_farm_acres', 'date_limits'}
+    assert data['date_limits']['harvest_max'] == str(date.today())
+
+
+def test_development_manual_district_farm_and_harvest_persist(api, monkeypatch):
+    from app.config import Settings, settings
+    from app import records
+
+    values = settings().model_dump()
+    monkeypatch.setenv('CROPS', '{}')
+    monkeypatch.setenv('PILOT_DISTRICTS', '[]')
+    development = Settings(**(values | {'environment': 'development', 'pilot_districts': [], 'crops': {}}))
+    monkeypatch.setattr(records, 'settings', lambda: development)
+    client, factory = api
+    headers, _ = login(client)
+    options = client.get('/api/v1/reference-data', headers=headers).json()
+    assert options['pilot_districts'] == []
+    assert options['allow_manual_district'] is True
+    farm_response = client.post('/api/v1/farms', headers=headers,
+                                json=farm_body() | {'district': '  Farmer entered district  '})
+    assert farm_response.status_code == 201, farm_response.text
+    farm = farm_response.json()
+    assert farm['district'] == 'Farmer entered district'
+    body = harvest_body(farm['id']) | {'crop': 'Ragi', 'variety': 'Not sure', 'grade': 'Ungraded / not sure'}
+    response = client.post('/api/v1/harvests', headers=headers, json=body)
+    assert response.status_code == 201, response.text
+    harvest = response.json()
+    assert client.get('/api/v1/harvests', headers=headers).json() == [harvest]
+    from app.models import Farm, Harvest
+    with factory() as db:
+        assert db.get(Farm, farm['id']).district == 'Farmer entered district'
+        assert db.get(Harvest, harvest['id']).crop == 'Ragi'
+    blank = client.post('/api/v1/farms', headers=headers, json=farm_body() | {'district': '   '})
+    assert blank.status_code == 400
+
+    restricted = Settings(**(values | {'environment': 'test', 'pilot_districts': []}))
+    monkeypatch.setattr(records, 'settings', lambda: restricted)
+    assert not client.get('/api/v1/reference-data', headers=headers).json()['allow_manual_district']
+    assert client.post('/api/v1/farms', headers=headers, json=farm_body()).json()['code'] == 'PILOT_NOT_CONFIGURED'
+
+
+def test_failed_harvest_can_be_completed_using_saved_farm(api):
+    client, _ = api
+    headers, _ = login(client)
+    farm_response = client.post('/api/v1/farms', headers=headers, json=farm_body())
+    assert farm_response.status_code == 201, farm_response.text
+    farm = farm_response.json()
+    rejected = client.post('/api/v1/harvests', headers=headers,
+                           json=harvest_body(farm['id']) | {'harvest_date': str(date.today() + timedelta(days=1))})
+    assert rejected.status_code == 400
+    assert rejected.json()['code'] == 'VAL_HARVEST_DATE'
+    assert [record['id'] for record in client.get('/api/v1/farms', headers=headers).json()] == [farm['id']]
+    assert client.get('/api/v1/harvests', headers=headers).json() == []
+    saved = client.post('/api/v1/harvests', headers=headers, json=harvest_body(farm['id']))
+    assert saved.status_code == 201, saved.text
+    assert client.get('/api/v1/harvests', headers=headers).json() == [saved.json()]
+    assert len(client.get('/api/v1/farms', headers=headers).json()) == 1
 
 
 def test_registration_encryption_language_and_tokens(api):

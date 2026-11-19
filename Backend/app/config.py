@@ -1,4 +1,6 @@
 from functools import lru_cache
+import json
+from pathlib import Path
 
 from cryptography.fernet import Fernet
 from pydantic import model_validator
@@ -22,8 +24,14 @@ class Settings(BaseSettings):
     max_storage_months: int = 6
     otp_resend_seconds: int = 60
 
+    @property
+    def allow_manual_district(self):
+        return self.environment == 'development' and not self.pilot_districts
+
     @model_validator(mode='after')
     def secure_settings(self):
+        if self.environment == 'development' and not self.crops:
+            self.crops = json.loads(Path(__file__).with_name('development_crops.json').read_text(encoding='utf-8'))
         if len(self.jwt_secret) < 32 or len(self.lookup_secret) < 32:
             raise ValueError('JWT_SECRET and LOOKUP_SECRET must contain at least 32 characters')
         Fernet(self.encryption_key.encode())

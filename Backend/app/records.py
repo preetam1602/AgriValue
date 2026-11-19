@@ -3,14 +3,14 @@ import calendar
 from datetime import date, datetime
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, Response
+from sqlalchemy import delete, select
 from sqlalchemy.sql.sqltypes import Numeric
 
 from .config import settings
 from .db import session
 from .models import Consent, Farm, Harvest, Residue
-from .schemas import FarmInput, HarvestInput, ResidueInput
+from .schemas import FarmInput, HarvestInput, HarvestRecordInput, ResidueInput
 from .security import audit, authorize, current_user, fail
 
 router = APIRouter()
@@ -21,12 +21,14 @@ def reference_data(user=Depends(current_user)):
     cfg = settings()
     return {
         'pilot_districts': cfg.pilot_districts,
+        'allow_manual_district': cfg.allow_manual_district,
         'crops': {code: {'varieties': crop.get('varieties', []),
                          'grades': crop.get('grades', []),
                          'bag_weight_kg': crop.get('bag_weight_kg')}
                   for code, crop in cfg.crops.items() if crop.get('active')},
         'max_storage_months': cfg.max_storage_months,
         'max_farm_acres': cfg.max_farm_acres,
+        'date_limits': record_date_limits(),
     }
 
 
@@ -48,7 +50,7 @@ def output(record, warnings=None):
     return result
 
 
-def save(db, record, values, user, kind):
+def save(db, record, values, user, kind, commit=True):
     for key, value in values.items():
         setattr(record, key, value)
     if record.id is None:
@@ -57,7 +59,8 @@ def save(db, record, values, user, kind):
     db.add(record)
     db.flush()
     audit(db, user.id, 'RECORD_SAVED', kind, record.id)
-    db.commit()
+    if commit:
+        db.commit()
     return record
 
 
@@ -77,15 +80,20 @@ def visible_farms(db, user):
 
 def farm_values(body):
     cfg = settings()
-    if not cfg.pilot_districts:
+    if not cfg.pilot_districts and not cfg.allow_manual_district:
         fail('PILOT_NOT_CONFIGURED', 503)
-    if body.district not in cfg.pilot_districts:
+    district = body.district.strip()
+    if not district or (not cfg.allow_manual_district and district not in cfg.pilot_districts):
         fail('VAL_DISTRICT')
+    if not body.village.strip():
+        fail('VALIDATION_ERROR')
     factor = {'acre': Decimal('1'), 'hectare': Decimal('2.4710538147'), 'gunta': Decimal('0.025')}
     acres = (body.entered_area * factor[body.area_unit]).quantize(Decimal('0.000001'))
     if acres <= 0 or acres > Decimal(str(cfg.max_farm_acres)):
         fail('VAL_FARM_AREA')
     values = body.model_dump(exclude={'owner_id'})
+    values['district'] = district
+    values['village'] = body.village.strip()
     values['area_acres'] = acres
     return values
 
@@ -127,6 +135,16 @@ def add_months(day, months):
     return date(year, month, min(day.day, calendar.monthrange(year, month)[1]))
 
 
+def record_date_limits(today=None):
+    today = today or date.today()
+    try:
+        earliest = today.replace(year=today.year - 1)
+    except ValueError:
+        earliest = today.replace(year=today.year - 1, day=28)
+    return {'harvest_min': earliest, 'harvest_max': today,
+            'sale_min': today, 'sale_max': add_months(today, settings().max_storage_months)}
+
+
 def harvest_values(body, farm):
     cfg = settings()
     if not cfg.crops:
@@ -136,14 +154,11 @@ def harvest_values(body, farm):
         fail('VAL_CROP')
     if body.variety not in crop.get('varieties', []) or body.grade not in crop.get('grades', []):
         fail('VAL_CROP')
-    today = date.today()
-    try:
-        earliest = today.replace(year=today.year - 1)
-    except ValueError:
-        earliest = today.replace(year=today.year - 1, day=28)
-    if not earliest <= body.harvest_date <= today:
+    limits = record_date_limits()
+    today = limits['harvest_max']
+    if not limits['harvest_min'] <= body.harvest_date <= limits['harvest_max']:
         fail('VAL_HARVEST_DATE')
-    if not today <= body.latest_sale_date <= add_months(today, cfg.max_storage_months):
+    if not limits['sale_min'] <= body.latest_sale_date <= limits['sale_max']:
         fail('VAL_SALE_DATE')
     if body.cash_needed_by and body.cash_needed_by < today:
         fail('VAL_CASH_DEADLINE')
@@ -167,6 +182,31 @@ def harvest_values(body, farm):
     values = body.model_dump(exclude={'confirm_high_quantity'})
     values['quantity_qtl'] = quantity
     return values, warnings
+
+
+@router.post('/harvest-records', status_code=201)
+def create_harvest_record(body: HarvestRecordInput, user=Depends(current_user), db=Depends(session)):
+    new_farm = body.farm is not None
+    if new_farm:
+        owner_id = body.farm.owner_id if body.farm.owner_id is not None else user.id
+        authorize(db, user, owner_id, write=True)
+        location_values = farm_values(body.farm)
+        farm = Farm(owner_id=owner_id, **location_values)
+    else:
+        farm = get(db, Farm, body.farm_id)
+        authorize(db, user, farm.owner_id, write=True)
+    details = HarvestInput(**body.model_dump(exclude={'farm', 'farm_id'}), farm_id=farm.id or 1)
+    values, warnings = harvest_values(details, farm)
+    try:
+        if new_farm:
+            save(db, farm, location_values, user, 'farm', commit=False)
+        values['farm_id'] = farm.id
+        harvest = save(db, Harvest(), values, user, 'harvest', commit=False)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return {'farm': output(farm), 'harvest': output(harvest, warnings)}
 
 
 @router.post('/harvests', status_code=201)
@@ -203,6 +243,23 @@ def update_harvest(harvest_id: int, body: HarvestInput, user=Depends(current_use
         fail('VALIDATION_ERROR')
     values, warnings = harvest_values(body, farm)
     return output(save(db, harvest, values, user, 'harvest'), warnings)
+
+
+@router.delete('/harvests/{harvest_id}', status_code=204)
+def delete_harvest(harvest_id: int, user=Depends(current_user), db=Depends(session)):
+    harvest = accessible_harvest(db, user, harvest_id, True)
+    try:
+        residue_ids = db.scalars(select(Residue.id).where(Residue.harvest_id == harvest_id)).all()
+        db.execute(delete(Residue).where(Residue.harvest_id == harvest_id))
+        for residue_id in residue_ids:
+            audit(db, user.id, 'RECORD_DELETED', 'residue', residue_id)
+        db.delete(harvest)
+        audit(db, user.id, 'RECORD_DELETED', 'harvest', harvest_id)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return Response(status_code=204)
 
 
 @router.post('/harvests/{harvest_id}/residues', status_code=201)

@@ -46,8 +46,7 @@ class FarmInput(Input):
     vehicle_capacity_qtl: Decimal = Field(ge=0, max_digits=16, decimal_places=6)
 
 
-class HarvestInput(Input):
-    farm_id: int = Field(gt=0)
+class HarvestDetails(Input):
     crop: str = Field(min_length=1, max_length=100)
     variety: str = Field(min_length=1, max_length=100)
     grade: str = Field(min_length=1, max_length=100)
@@ -63,6 +62,21 @@ class HarvestInput(Input):
     def cash_pair(self):
         if (self.cash_needed is None) != (self.cash_needed_by is None):
             raise ValueError('Cash amount and deadline must be supplied together')
+        return self
+
+
+class HarvestInput(HarvestDetails):
+    farm_id: int = Field(gt=0)
+
+
+class HarvestRecordInput(HarvestDetails):
+    farm_id: int | None = Field(default=None, gt=0)
+    farm: FarmInput | None = None
+
+    @model_validator(mode='after')
+    def one_location(self):
+        if (self.farm_id is None) == (self.farm is None):
+            raise ValueError('Supply one existing location or new location details')
         return self
 
 

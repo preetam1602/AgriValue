@@ -2,7 +2,11 @@
 
 Implements **Step 1 — Accounts and harvest records** from `Docs/implementation (1).md`, following FSD sections 3, 4.1, 4.2 and 7 and SDD sections 4, 5 and 8. All implementation files are under `Backend`. Source documents are unchanged.
 
+In development, an empty `PILOT_DISTRICTS` setting allows farmers to enter their district manually and save farms and harvests. The reference-data response exposes `allow_manual_district` so the form can show a text field. Configured district lists still apply when present; production continues to require configured pilot districts. Farm coordinates, area, crop, quantity and date validation still apply.
+
 ## Setup (PowerShell, from Backend)
+
+The farmer form uses `POST /api/v1/harvest-records` to save a complete record in one transaction. Supply harvest details plus either a nested `farm` object or an existing `farm_id`. The response contains `farm` and `harvest`; the saved harvest immediately appears in `GET /api/v1/harvests` for subsequent operations. Failed validation or a database write failure creates no partial farm record. Existing farm and harvest endpoints remain available for API compatibility.
 
 ```powershell
 python -m venv .venv
@@ -17,6 +21,8 @@ Put the generated values in `.env`. Set `DATABASE_URL` to a dedicated PostgreSQL
 Set `PILOT_DISTRICTS` to a JSON array of the approved pilot districts. Set `CROPS` to a JSON object keyed by the approved crop code. Each crop entry requires `active`, `varieties` and `grades`; bag conversion additionally requires `bag_weight_kg`. Optional `high_quantity_qtl_per_acre` enables the farm-area warning. These settings are supplied by the operator for Step 1; crop reference tables and administrative management belong to Step 2. No region, variety, grade, bag weight or yield threshold is invented or seeded here.
 
 `MAX_FARM_ACRES=100` and `MAX_STORAGE_MONTHS=6` are configurable FSD placeholders. OTP resend cooldown is configurable, initially 60 seconds. Money is INR, capacities and stored quantities are quintals, and original quantity and area inputs are preserved. Decimal response fields are strings to preserve precision.
+
+In development, an empty `CROPS` setting loads `app/development_crops.json` to populate the harvest dropdowns. Its generic variety categories and A/B/C labels are development choices, not official grading standards. No bag weights or yield thresholds are assumed. Explicit `CROPS` settings take precedence; production and tests do not use this fallback. Restart the backend after changing configuration. Production still requires the operator's approved crop, variety and grade list.
 
 ```powershell
 python -m alembic upgrade head

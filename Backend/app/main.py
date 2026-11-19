@@ -27,7 +27,7 @@ MESSAGES = {
     'VAL_DISTRICT': ('Choose a configured pilot district.', 'ನಿಗದಿತ ಪ್ರಾಯೋಗಿಕ ಜಿಲ್ಲೆಯನ್ನು ಆಯ್ಕೆಮಾಡಿ.'),
     'VAL_FARM_AREA': ('Farm area is outside the allowed range.', 'ಜಮೀನಿನ ವಿಸ್ತೀರ್ಣವು ಅನುಮತಿಸಿದ ಮಿತಿಯಲ್ಲಿಲ್ಲ.'),
     'VAL_CROP': ('Choose an active crop, variety and grade.', 'ಸಕ್ರಿಯ ಬೆಳೆ, ತಳಿ ಮತ್ತು ದರ್ಜೆಯನ್ನು ಆಯ್ಕೆಮಾಡಿ.'),
-    'VAL_HARVEST_DATE': ('Harvest must be within the past year.', 'ಕೊಯ್ಲು ಕಳೆದ ಒಂದು ವರ್ಷದೊಳಗೆ ಆಗಿರಬೇಕು.'),
+    'VAL_HARVEST_DATE': ('Choose the date you harvested, within the past year and no later than today.', 'ಕೊಯ್ಲು ಕಳೆದ ಒಂದು ವರ್ಷದೊಳಗೆ ಆಗಿರಬೇಕು.'),
     'VAL_SALE_DATE': ('Check the latest sale date.', 'ಕೊನೆಯ ಮಾರಾಟ ದಿನಾಂಕವನ್ನು ಪರಿಶೀಲಿಸಿ.'),
     'VAL_CASH_DEADLINE': ('Cash deadline cannot be in the past.', 'ಹಣ ಬೇಕಾಗುವ ದಿನಾಂಕ ಹಿಂದಿನದಾಗಿರಬಾರದು.'),
     'VAL_QUANTITY': ('Enter a valid positive quantity.', 'ಸರಿಯಾದ ಧನಾತ್ಮಕ ಪ್ರಮಾಣವನ್ನು ನಮೂದಿಸಿ.'),
